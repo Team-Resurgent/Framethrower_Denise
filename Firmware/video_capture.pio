@@ -18,9 +18,9 @@ wait 0 gpio 22
 
 pixelloop:
     ; Tweak [7] if red tint on black: try 3, 4, 5, 6, or 7
-    wait 1 gpio 22 [7]
+    wait 1 gpio 22 [6]
     in pins, 32
-    wait 0 gpio 22 [7]
+    wait 0 gpio 22 [6]
     in pins, 32
     jmp x-- pixelloop
 ;.wrap 
