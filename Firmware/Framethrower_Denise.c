@@ -20,6 +20,7 @@
 #include "hardware/adc.h"
 #include "pico/multicore.h"
 #include "pico/time.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -62,12 +63,15 @@ PIO pio_rga = pio1;
 
 uint sm_video, sm_vsync;
 uint sm_rga_read, sm_rga_write;
+static uint video_capture_pio_offset;  // for runtime sync-delay patch
 volatile uint32_t rga_1F4 = 0;
 volatile uint32_t rga_1F6 = 0;
 
 // Interrupt Global
 volatile bool vsync_detected = false;
 volatile uint32_t lines;
+volatile uint32_t vsync_count = 0;       // number of vsyncs seen (for deferred auto-calibration)
+volatile bool sync_calibration_done = false;
 volatile bool prev_isPAL = true;
 volatile bool video_go = false;
 volatile bool vsync_go = true;
@@ -327,6 +331,18 @@ void __not_in_flash_func(get_pio_line)(uint16_t* line_buffer) {
 }
 
 // =============================================================================
+// --- Video capture sync delay (runtime PIO patch) ---
+// =============================================================================
+// Patches the two WAIT delay fields (instructions at offset+4 and offset+6) so
+// the pixel loop sampling phase can be tuned without rebuilding. Delay 0-31.
+void video_capture_set_sync_delay(uint offset, uint8_t delay) {
+    uint8_t d = delay & 0x1Fu;
+    uint16_t *instr = (uint16_t *)&pio_video->instr_mem[offset];
+    instr[4] = (uint16_t)((instr[4] & 0xE0FFu) | ((uint32_t)d << 8));
+    instr[6] = (uint16_t)((instr[6] & 0xE0FFu) | ((uint32_t)d << 8));
+}
+
+// =============================================================================
 // --- PIO Setup ---
 // =============================================================================
 void setup_vsync_detect_sm(uint offset) {
@@ -423,7 +439,31 @@ void __not_in_flash_func(core1_entry)() {
 
         __wfi();
         if (vsync_detected) {
-            vsync_detected = false; 
+            vsync_detected = false;
+            vsync_count++;
+
+#if defined(AUTO_SYNC_CALIBRATION)
+            /* Run sync calibration once after ~1 second of signal (50 vsyncs @ 50Hz PAL / 60Hz NTSC) */
+            if (vsync_count >= 50 && !sync_calibration_done) {
+                uint32_t best_sum = UINT32_MAX;
+                uint best_delay = 5;
+                for (uint d = 0; d <= 31; d++) {
+                    video_capture_set_sync_delay(video_capture_pio_offset, (uint8_t)d);
+                    get_pio_line(line1);
+                    uint32_t sum_red = 0;
+                    for (uint i = 0; i < ACTIVE_VIDEO; i++)
+                        sum_red += (line1[i] >> 11) & 0x1F;
+                    if (sum_red < best_sum) {
+                        best_sum = sum_red;
+                        best_delay = d;
+                    }
+                }
+                video_capture_set_sync_delay(video_capture_pio_offset, (uint8_t)best_delay);
+                sync_calibration_done = true;
+                continue; /* skip this frame, resume next vsync */
+            }
+#endif
+
             vsync_go = true;
 
             //Vblank abwarten
@@ -502,6 +542,7 @@ int __not_in_flash_func(main)(void) {
     setup_rga_read_sm(offset_rga_read);
     setup_rga_write_sm(offset_rga_write);
 
+    video_capture_pio_offset = offset_video;
     pio_sm_put_blocking(pio_video, sm_video, ((SAMPLES_PER_LINE+HBLANK) / 2) - 1);
 
     bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_W_BITS | BUSCTRL_BUS_PRIORITY_DMA_R_BITS;

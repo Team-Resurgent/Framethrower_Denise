@@ -93,6 +93,8 @@ target_link_libraries(Framethrower_Denise
         )
 
 target_compile_definitions(Framethrower_Denise PRIVATE
+        # Uncomment next line to auto-pick pixel sync delay after ~1s of signal (minimizes red on black)
+        AUTO_SYNC_CALIBRATION
         #PLL_SYS_REFDIV=1
         #PLL_SYS_VCO_FREQ_HZ=1344000000
         #PLL_SYS_POSTDIV1=4
