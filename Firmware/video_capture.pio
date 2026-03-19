@@ -2,21 +2,25 @@
 ; SPDX-License-Identifier: MIT
 
 ; File: video_capture.pio
+; Sync phase: delay cycles after pixel clock edge before sampling (0-31).
+; If black shows red tint, change the two [7] below to 3, 4, 5, or 6 and rebuild.
 .program video_capture
 
 ;.wrap_target
 ;pull
 ;mov X, OSR
 
+; Sync to csync (gpio 23), then align to pixel clock (gpio 22)
 wait 1 gpio 23 [5]
 wait 0 gpio 23 [5]
 wait 1 gpio 23 [5]
 wait 0 gpio 22
 
 pixelloop:
-    wait 1 gpio 22[7]
+    ; Tweak [7] if red tint on black: try 3, 4, 5, 6, or 7
+    wait 1 gpio 22 [7]
     in pins, 32
-    wait 0 gpio 22[7]
+    wait 0 gpio 22 [7]
     in pins, 32
     jmp x-- pixelloop
 ;.wrap 

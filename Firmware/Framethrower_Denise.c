@@ -511,6 +511,8 @@ int __not_in_flash_func(main)(void) {
     mipi_init();
     DMASetup(0);
 
+    memset(blackline, 0, sizeof(blackline));
+
     uint32_t lines_read_count = 0;
     bool frame_active = false;
 
