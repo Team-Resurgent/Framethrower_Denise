@@ -443,22 +443,29 @@ void __not_in_flash_func(core1_entry)() {
             vsync_count++;
 
 #if defined(AUTO_SYNC_CALIBRATION)
-            /* Run sync calibration once after ~1 second of signal (50 vsyncs @ 50Hz PAL / 60Hz NTSC) */
+            /* Run sync calibration once after ~1 second of signal. Pick delay that
+             * maximizes luminance (valid video), not minimizes red (that picked blanking = black). */
             if (vsync_count >= 50 && !sync_calibration_done) {
-                uint32_t best_sum = UINT32_MAX;
-                uint best_delay = 5;
+                uint32_t best_sum = 0;
+                uint best_delay = 6;
                 for (uint d = 0; d <= 31; d++) {
                     video_capture_set_sync_delay(video_capture_pio_offset, (uint8_t)d);
                     get_pio_line(line1);
-                    uint32_t sum_red = 0;
-                    for (uint i = 0; i < ACTIVE_VIDEO; i++)
-                        sum_red += (line1[i] >> 11) & 0x1F;
-                    if (sum_red < best_sum) {
-                        best_sum = sum_red;
+                    uint32_t sum_luma = 0;
+                    for (uint i = 0; i < ACTIVE_VIDEO; i++) {
+                        uint16_t p = line1[i];
+                        sum_luma += (p >> 11) & 0x1F;  /* R */
+                        sum_luma += (p >> 5) & 0x3F;   /* G */
+                        sum_luma += (p) & 0x1F;        /* B */
+                    }
+                    if (sum_luma > best_sum) {
+                        best_sum = sum_luma;
                         best_delay = d;
                     }
                 }
-                video_capture_set_sync_delay(video_capture_pio_offset, (uint8_t)best_delay);
+                /* Only apply if we saw real signal (avoid blanking/no-signal) */
+                if (best_sum > 1000u)
+                    video_capture_set_sync_delay(video_capture_pio_offset, (uint8_t)best_delay);
                 sync_calibration_done = true;
                 continue; /* skip this frame, resume next vsync */
             }
