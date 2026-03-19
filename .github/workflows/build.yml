@@ -16,6 +16,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Remove Firmware build folder
+        run: rm -rf Firmware/build
+
       - name: Install Dependencies
         run: sudo apt install -y cmake gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
 
